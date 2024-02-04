@@ -51,56 +51,94 @@ async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
     data = query.data
 
-    # Проверяем, есть ли данные о курсе в словаре
-    if data in course_keyboards:
-        keyboard = course_keyboards[data]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text="Выберите семестр:", reply_markup=reply_markup)
+    if data.startswith('kurs_'):
+        # Сохраняем выбранный курс
+        course_keyboards[user_id] = data
 
-    # Обработка выбора подкатегорий
-    elif data.startswith('sem_'):
-        await select_subject(update, context, data)
+    if data.startswith('back_to_'):
+        if data == 'back_to_kurs':
+            message_text = "Выберите курс:"
+            keyboard = [
+                [
+                    InlineKeyboardButton("1 курс", callback_data='kurs_1'),
+                    InlineKeyboardButton("2 курс", callback_data='kurs_2'),
+                    InlineKeyboardButton("3 курс", callback_data='kurs_3'),
+                ]
+            ]
+        else:
+            # Используем сохраненный курс при возврате
+            kurs = course_keyboards.get(user_id, 'kurs_1')  # По умолчанию 'kurs_1'
+            message_text = "Выберите семестр:"
+            keyboard = course_keyboards.get(kurs, [])
+            keyboard = keyboard.copy()  # Создаем копию списка кнопок
+            keyboard.append(back_button('back_to_kurs'))
 
-    # Обработка выбора предмета
-    elif data.startswith('subject_'):
-        parts = data.split('_')
-        selected_semester = '_'.join(parts[1:-1])
-        subject_num = parts[-1]
-        await select_work_type(update, context, selected_semester, subject_num)
+    else:
+        # Обработка остальных callback data
+        if data in course_keyboards:
+            message_text = "Выберите семестр:"
+            keyboard = course_keyboards[data].copy()  # Создаем копию списка кнопок
+            keyboard.append(back_button('back_to_kurs'))
 
-    # Обработка выбора типа работы
-    elif data.startswith('worktype_'):
-        _, subject_num, work_type = data.split('_', 2)  # Изменено на разбиение на три части
-        work_type = work_type.replace('_', ' ')
-        await query.edit_message_text(text=f"Вы выбрали {work_type} для предмета {subject_num}")
+        elif data.startswith('sem_'):
+            await select_subject(update, context, data)
+            return  # Выход, так как select_subject сам обрабатывает сообщение
+
+        elif data.startswith('subject_'):
+            parts = data.split('_')
+            selected_semester = '_'.join(parts[1:-1])
+            subject_num = parts[-1]
+            await select_work_type(update, context, selected_semester, subject_num)
+            return  # Выход, так как select_work_type сам обрабатывает сообщение
+
+        elif data.startswith('worktype_'):
+            _, subject_num, work_type = data.split('_', 2)
+            work_type = work_type.replace('_', ' ')
+            message_text = f"Вы выбрали {work_type} для предмета {subject_num}"
+            keyboard = []  # Здесь может быть логика для следующего шага или пустая клавиатура
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(text=message_text, reply_markup=reply_markup)
+
+
+def back_button(callback_data):
+    return [InlineKeyboardButton("Назад", callback_data=callback_data)]
 
 # Утилиты
 async def select_subject(update: Update, context: ContextTypes.DEFAULT_TYPE, selected_semester: str):
-    # Получаем список предметов для выбранного семестра
-    subjects = subjects_by_semester.get(selected_semester, []) 
-
-    # Получаем индивидуальное сообщение для выбранного семестра
-    message_text = semester_messages.get(selected_semester, "Выберите предмет:")
-
+    subjects = subjects_by_semester.get(selected_semester, [])
+    # Создаем новый список кнопок
     keyboard = [
         [InlineKeyboardButton(subject, callback_data=f"subject_{selected_semester}_{subject.replace(' ', '_')}") for subject in subjects]
     ]
+
+    # Добавляем кнопку "Назад" для возвращения к выбору семестра
+    kurs = selected_semester.split('_')[1]  # Получаем номер курса из selected_semester
+    keyboard.append(back_button(f'back_to_sem_{kurs}'))
+
+    message_text = semester_messages.get(selected_semester, "Выберите предмет:")
     reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
-    await query.answer()
     await query.edit_message_text(text=message_text, reply_markup=reply_markup)
 
 async def select_work_type(update: Update, context: ContextTypes.DEFAULT_TYPE, selected_semester: str, subject_num: str):
     work_types = work_types_by_semester_and_subject.get(selected_semester, {}).get(subject_num, ["Нет доступных работ"])
+    # Создаем новый список кнопок
     keyboard = [
         [InlineKeyboardButton(work_type, callback_data=f"worktype_{subject_num}_{work_type.replace(' ', '_')}") for work_type in work_types]
     ]
+
+    # Добавляем кнопку "Назад" для возвращения к выбору предмета
+    kurs = selected_semester.split('_')[1]  # Получаем номер курса из selected_semester
+    keyboard.append(back_button(f'back_to_subject_{selected_semester}_{kurs}'))
+
+    message_text = f"Выберите тип работы для предмета:"
     reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
-    await query.answer()
-    await query.edit_message_text(text=f"Выберите тип работы для предмета {subject_num} в {selected_semester}:", reply_markup=reply_markup)
+    await query.edit_message_text(text=message_text, reply_markup=reply_markup)
 
 # Словари
 course_keyboards = {
@@ -177,6 +215,12 @@ work_types_by_semester_and_subject = {
         "8": ["Общая информация", "ЛР", "РГР"],
     },
     # Добавьте структуры для других семестров
+}
+
+back_button_data = {
+    'sem': 'back_to_kurs',
+    'subject': 'back_to_sem',
+    'worktype': 'back_to_subject'
 }
 
 # Основная часть
