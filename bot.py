@@ -2,49 +2,67 @@ from typing import Final
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, filters, ContextTypes, CommandHandler, CallbackQueryHandler
 
+# Константы
 TOKEN: Final = '6711292079:AAGob9yiKuepK88G31X8KDdCBTR3Suh-uJo'
 BOT_USERNAME: Final = '@nstu_works_bot'
 
+# Команды
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [
             InlineKeyboardButton("1 курс", callback_data='kurs_1'),
             InlineKeyboardButton("2 курс", callback_data='kurs_2'),
-            InlineKeyboardButton("3 курс", callback_data='kurs_3')
+            InlineKeyboardButton("3 курс", callback_data='kurs_3'),
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text('Выберите папку:', reply_markup=reply_markup)
+    await update.message.reply_text('Выберите курс:', reply_markup=reply_markup)
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text('Если Вы хотите купить какую-то работу на заказ, либо же хотите задать какие-то вопросы - тут надо бы чото придумать чтобы конф соблюдать ыы')
+
+async def sosi_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    response_text = "Информация на команду /sosi"
+    await update.message.reply_text(response_text)
+
+# Обработчики сообщений
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message_type: str = update.message.chat.type
+    text: str = update.message.text
+
+    print(f'User ({update.message.chat.id}) in {message_type}: "{type}"')
+
+    if message_type == 'group':
+        if BOT_USERNAME in text:
+            new_text: str = text.replace(BOT_USERNAME, '').strip()
+            response: str = handle_response(new_text)
+        else:
+            return
+    else:
+        response: str = handle_response(text)
+    
+    print('Bot:', response)
+    await update.message.reply_text(response)
+
+async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f'Update {update} caused error {context.error}')
+
+# Обработчики кнопок
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
 
-    if data == 'kurs_1':    
-        keyboard = [
-            [InlineKeyboardButton("Первый семестр", callback_data='sem_1')],
-            [InlineKeyboardButton("Второй семестр", callback_data='sem_2')],
-        ]
+    # Проверяем, есть ли данные о курсе в словаре
+    if data in course_keyboards:
+        keyboard = course_keyboards[data]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(text="Выберите семестр:", reply_markup=reply_markup)
-    elif data == 'kurs_2':
-        keyboard = [
-            [InlineKeyboardButton("Третий семестр", callback_data='sem_3')],
-            [InlineKeyboardButton("Четвертый семестр", callback_data='sem_4')],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text="Выберите семестр:", reply_markup=reply_markup)
-    elif data == 'kurs_3':
-        keyboard = [
-            [InlineKeyboardButton("Пятый семестр", callback_data='sem_5')],
-            #[InlineKeyboardButton("Шестой семестр", callback_data='sem_6')],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text="Выберите семестр:", reply_markup=reply_markup)
+
     # Обработка выбора подкатегорий
     elif data.startswith('sem_'):
         await select_subject(update, context, data)
+
     # Обработка выбора предмета
     elif data.startswith('subject_'):
         parts = data.split('_')
@@ -58,6 +76,57 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         work_type = work_type.replace('_', ' ')
         await query.edit_message_text(text=f"Вы выбрали {work_type} для предмета {subject_num}")
 
+# Утилиты
+async def select_subject(update: Update, context: ContextTypes.DEFAULT_TYPE, selected_semester: str):
+    # Получаем список предметов для выбранного семестра
+    subjects = subjects_by_semester.get(selected_semester, []) 
+
+    # Получаем индивидуальное сообщение для выбранного семестра
+    message_text = semester_messages.get(selected_semester, "Выберите предмет:")
+
+    keyboard = [
+        [InlineKeyboardButton(subject, callback_data=f"subject_{selected_semester}_{subject.replace(' ', '_')}") for subject in subjects]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(text=message_text, reply_markup=reply_markup)
+
+async def select_work_type(update: Update, context: ContextTypes.DEFAULT_TYPE, selected_semester: str, subject_num: str):
+    work_types = work_types_by_semester_and_subject.get(selected_semester, {}).get(subject_num, ["Нет доступных работ"])
+    keyboard = [
+        [InlineKeyboardButton(work_type, callback_data=f"worktype_{subject_num}_{work_type.replace(' ', '_')}") for work_type in work_types]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(text=f"Выберите тип работы для предмета {subject_num} в {selected_semester}:", reply_markup=reply_markup)
+
+# Словари
+course_keyboards = {
+    'kurs_1': [
+        [InlineKeyboardButton("Первый семестр", callback_data='sem_1')],
+        [InlineKeyboardButton("Второй семестр", callback_data='sem_2')]
+    ],
+    'kurs_2': [
+        [InlineKeyboardButton("Третий семестр", callback_data='sem_3')],
+        [InlineKeyboardButton("Четвертый семестр", callback_data='sem_4')]
+    ],
+    'kurs_3': [
+        [InlineKeyboardButton("Пятый семестр", callback_data='sem_5')]
+        # Здесь можно добавить шестой семестр при необходимости
+    ]
+    # Добавьте другие курсы при необходимости
+}
+
+subjects_by_semester = {
+    'sem_1': ["1", "2", "3", "4"],
+    'sem_2': ["1", "2", "3", "4", "5"],
+    'sem_3': ["1", "2", "3", "4"],
+    'sem_4': ["1", "2", "3", "4", "5", "6", "7"],
+    'sem_5': ["1", "2", "3", "4", "5", "6", "7", "8"]
+    # Добавьте другие семестры при необходимости
+}
 
 semester_messages = {
     'sem_1': "Выберите предмет для первого семестра:\n1. Информатика (Балакин, Кондратьев, Романов)\n2. Мат. анализ (Филатов, Бутырин)\n3. Линейная алгебра (Судоплатов, Захаров)\n4. Учебная практика (Коршикова)",
@@ -110,87 +179,19 @@ work_types_by_semester_and_subject = {
     # Добавьте структуры для других семестров
 }
 
-async def select_subject(update: Update, context: ContextTypes.DEFAULT_TYPE, selected_semester: str):
-    if selected_semester == 'sem_1':
-        subjects = ["1", "2", "3", "4"] 
-    elif selected_semester == 'sem_2':
-        subjects = ["1", "2", "3", "4", "5"] 
-    elif selected_semester == 'sem_3':
-        subjects = ["1", "2", "3", "4"] 
-    elif selected_semester == 'sem_4':
-        subjects = ["1", "2", "3", "4", "5", "6", "7"]    
-    elif selected_semester == 'sem_5':
-        subjects = ["1", "2", "3", "4", "5", "6", "7", "8"]    
-    #elif selected_semester == 'sem_6':
-        #subjects = ["я", "не ебу", "какие тут предметы"]    
-    
-    # Получаем индивидуальное сообщение для выбранного семестра
-    message_text = semester_messages.get(selected_semester, "Выберите предмет:")
-
-    keyboard = [
-        [InlineKeyboardButton(subject, callback_data=f"subject_{selected_semester}_{subject.replace(' ', '_')}") for subject in subjects]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_text(text=message_text, reply_markup=reply_markup)
-
-async def select_work_type(update: Update, context: ContextTypes.DEFAULT_TYPE, selected_semester: str, subject_num: str):
-    work_types = work_types_by_semester_and_subject.get(selected_semester, {}).get(subject_num, ["Нет доступных работ"])
-    keyboard = [
-        [InlineKeyboardButton(work_type, callback_data=f"worktype_{subject_num}_{work_type.replace(' ', '_')}") for work_type in work_types]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_text(text=f"Выберите тип работы для предмета {subject_num} в {selected_semester}:", reply_markup=reply_markup)
-
-
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Если Вы хотите купить какую-то работу на заказ, либо же хотите задать какие-то вопросы - тут надо бы чото придумать чтобы конф соблюдать ыы')
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message_type: str = update.message.chat.type
-    text: str = update.message.text
-
-    print(f'User ({update.message.chat.id}) in {message_type}: "{type}"')
-
-    if message_type == 'group':
-        if BOT_USERNAME in text:
-            new_text: str = text.replace(BOT_USERNAME, '').strip()
-            response: str = handle_response(new_text)
-        else:
-            return
-    else:
-        response: str = handle_response(text)
-    
-    print('Bot:', response)
-    await update.message.reply_text(response)
-
-async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f'Update {update} caused error {context.error}')
-
-
+# Основная часть
 if __name__ == '__main__':
     print('Starting bot...')
     app = Application.builder().token(TOKEN).build()
     print('Started.')
 
-    # Commands
+    # Регистрация обработчиков
     app.add_handler(CommandHandler('start', start_command))
     app.add_handler(CommandHandler('help', help_command))
-
-    # Message ?
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))  # исправлено тут, добавлено условие для фильтрации команд
-
-    # Callback query handler for inline keyboard buttons
+    app.add_handler(CommandHandler('sosi', sosi_command))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
     app.add_handler(CallbackQueryHandler(button))
-
-    # Errors
     app.add_error_handler(error)
 
-    # Polls the bot ?
-    app.run_polling(poll_interval = 1)
-
-    
+    # Запуск бота
+    app.run_polling()
