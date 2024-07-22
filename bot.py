@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, filters, ContextTypes, CommandHandler, CallbackQueryHandler
 
 # Константы
-TOKEN: Final = '6711292079:AAGob9yiKuepK88G31X8KDdCBTR3Suh-uJo'
+TOKEN: Final = ''
 BOT_USERNAME: Final = '@nstu_works_bot'
 
 # Команды
